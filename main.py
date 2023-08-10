@@ -7,7 +7,7 @@ import numpy as np
 from os import listdir, path
 from face_recognition import face_encodings, compare_faces, face_locations, face_distance
 from queue import Queue
-import json 
+import cx_Oracle
 
 HOST = '192.168.0.106'
 PORT = 8090
@@ -53,7 +53,7 @@ class Model(object):
 
                 name = self.known_face_names[matched_index]
                 top, right, bottom, left = face_location
-                encounter_details[name] = [confidence, encounter_time]
+                encounter_details[name] = {'confidence': confidence, 'encounter_time': encounter_time}
                 cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
                 cv2.rectangle(frame, (left, bottom-35), (right, bottom), (0, 255, 0), cv2.FILLED)
                 cv2.putText(frame, f"{name} ({confidence:.2f})", (left+6, bottom-6), cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255), 1)
@@ -182,6 +182,36 @@ class Threaded_Cameras():
     def get_cameras(self):
         return self.cameras
 
+class DataBase():
+    def __init__(self):
+        self.username = "aimlb4"
+        self.password = "vishalsai"
+        self.host = "localhost"
+        self.port = "1521"
+        self.service_name = "xe"
+        try:
+            dsn = cx_Oracle.makedsn(self.host, self.port, service_name=self.service_name)
+            self.connection = cx_Oracle.connect(self.username, self.password, dsn)
+        except:
+            print('[ERROR] Database connection failed')
+            raise Exception('Database connection failed')
+        
+    def insert(self, file_name, encounter_details):
+        self.cursor = self.connection.cursor()   
+        for encounter in encounter_details:
+            query = 'insert into encounters values(:name, :confidence, :timestamp, :image)'
+            values = {
+                "name": encounter,
+                "confidence": '%.2f%%'%(encounter_details[encounter]["confidence"]*100),
+                "timestamp": datetime.strptime(encounter_details[encounter]["encounter_time"], DATE_FORMAT),
+                "image": file_name
+            }
+            values["timestamp"] = values["timestamp"].strftime('%d-%b-%Y %H:%M:%S')
+            self.cursor.execute(query, values)
+        # print(values)
+        self.connection.commit()
+        self.cursor.close()
+
 class Threaded_Model():
     def __init__(self, cameras: dict):
         print('[INFO] Loading model...')
@@ -214,6 +244,10 @@ class Threaded_Model():
         self.show_frames_thread.daemon = True
         self.show_frames_thread.start()
 
+        print('[INFO] Connecting to database...')
+        self.db = DataBase()
+        print('[INFO] Connected to database')
+
     def process_frames(self, camera_index:int):
         model = self.models[camera_index]
         while True:
@@ -231,13 +265,13 @@ class Threaded_Model():
             for i in range(self.n):
                 try:
                     encounter_time, frame, encounter_details = self.processed_buffers[i].get(block=False)
+                    self.processed_buffers[i].task_done()
                     # cv2.imshow('Processed Camera ' + self.camera_names[i], frame)
                     # cv2.waitKey(1)
                     file_name = self.camera_names[i] + '_' + str(encounter_time)
                     cv2.imwrite('encounters/images/' + file_name + '.jpg', frame)
-                    with open('encounters/details/'+file_name+'.json', 'w') as f:
-                        json.dump(encounter_details, f, indent=4)
-                    self.processed_buffers[i].task_done()
+                    Thread(target=self.db.insert, args=(file_name, encounter_details)).start()
+                    # self.db.insert(file_name, encounter_details)
                 except:
                     pass
 
