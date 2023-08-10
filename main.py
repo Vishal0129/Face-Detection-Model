@@ -7,13 +7,14 @@ import numpy as np
 from os import listdir, path
 from face_recognition import face_encodings, compare_faces, face_locations, face_distance
 from queue import Queue
-
+import json 
 
 HOST = '192.168.0.106'
 PORT = 8090
 FPS = 60
 IMG_WIDTH = 640
 IMG_HEIGHT = 480
+DATE_FORMAT = "%Y%m%d_%H%M%S_%f"
 
 class Model(object):
     def __init__(self, known_faces_dir):
@@ -33,32 +34,10 @@ class Model(object):
                     face_encoding = known_face_encodings[0]
                     self.known_face_encodings.append(face_encoding)
                     self.known_face_names.append(person_name)
-    
-    # def recognize_faces(self, frame):
-    #     i=0
-    #     frame_face_locations = face_locations(frame, model='hog')
-    #     frame_face_encodings = face_encodings(frame, frame_face_locations)
-    #     for face_encoding, face_location in zip(frame_face_encodings, frame_face_locations):
-    #         matches = compare_faces(self.known_face_encodings, face_encoding)
-            
-    #         name = "Person"
-    #         confidence = 0.0
 
-    #         if True in matches:
-    #             i+=1
-    #             matched_index = matches.index(True)
-    #             confidence = 1.0 - face_distance(self.known_face_encodings[matched_index], face_encoding)
-    #             name = self.known_face_names[matched_index]
-    #         else:
-    #             continue
-    #         top, right, bottom, left = face_location
-    #         cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-    #         cv2.rectangle(frame, (left, bottom-35), (right, bottom), (0, 255, 0), cv2.FILLED)
-    #         cv2.putText(frame, f"{name} ({confidence:.2f})", (left+6, bottom-6), cv2.FONT_HERSHEY_DUPLEX, 0.5 (255, 255, 255), 1)
-
-    #     return (True, frame) if i>0 else (False, frame)
-    def recognize_faces(self, frame, distance_threshold=0.6):
+    def recognize_faces(self, frame, distance_threshold=0.6, encounter_time=None):
         confidence_levels = []
+        encounter_details = dict()
 
         frame_face_locations = face_locations(frame, model='hog')
         frame_face_encodings = face_encodings(frame, frame_face_locations)
@@ -74,15 +53,16 @@ class Model(object):
 
                 name = self.known_face_names[matched_index]
                 top, right, bottom, left = face_location
+                encounter_details[name] = [confidence, encounter_time]
                 cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
                 cv2.rectangle(frame, (left, bottom-35), (right, bottom), (0, 255, 0), cv2.FILLED)
                 cv2.putText(frame, f"{name} ({confidence:.2f})", (left+6, bottom-6), cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255), 1)
 
         if confidence_levels:
             # average_confidence = sum(confidence_levels) / len(confidence_levels)
-            return True, frame
+            return True, frame, encounter_details
         else:
-            return False, frame
+            return False, frame, encounter_details
     
 class Camera(object):
     def __init__(self, src=0, if_stream=False, camera_buffer:Queue=None):
@@ -109,7 +89,7 @@ class Camera(object):
                 if camera_buffer:
                     # print('[INFO] Camera buffer ',camera_buffer.qsize())
                     # print('[INFO] Putting frame in camera buffer: ',camera_buffer)
-                    camera_buffer.put((datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3], self.frame))
+                    camera_buffer.put((datetime.now().strftime(DATE_FORMAT)[:-3], self.frame))
                     camera_buffer.task_done()
             # time.sleep(self.FPS)
             # time.sleep(self.FPS)
@@ -162,7 +142,7 @@ class Network_Camera(object):
             if camera_buffer:
                 # print('[INFO] Camera buffer ',camera_buffer.qsize())
                 # print('[INFO] Putting frame in camera buffer: ',camera_buffer)
-                camera_buffer.put((datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3], self.frame))
+                camera_buffer.put((datetime.now().strftime(DATE_FORMAT)[:-3], self.frame))
                 camera_buffer.task_done()
             # time.sleep(self.FPS)
 
@@ -239,9 +219,9 @@ class Threaded_Model():
         while True:
             try:
                 encounter_time, frame = self.camera_buffers[camera_index].get(block=False)
-                found, frame = model.recognize_faces(frame)
+                found, frame, encounter_details = model.recognize_faces(frame, encounter_time=encounter_time)
                 if found:
-                    self.processed_buffers[camera_index].put((encounter_time, frame))
+                    self.processed_buffers[camera_index].put((encounter_time, frame, encounter_details))
                 self.camera_buffers[camera_index].task_done()
             except:
                 continue
@@ -250,10 +230,13 @@ class Threaded_Model():
         while True:
             for i in range(self.n):
                 try:
-                    encounter_time, frame = self.processed_buffers[i].get(block=False)
+                    encounter_time, frame, encounter_details = self.processed_buffers[i].get(block=False)
                     # cv2.imshow('Processed Camera ' + self.camera_names[i], frame)
                     # cv2.waitKey(1)
-                    cv2.imwrite('encounters/'+self.camera_names[i]+str(encounter_time)+'.jpg', frame)
+                    file_name = self.camera_names[i] + '_' + str(encounter_time)
+                    cv2.imwrite('encounters/images/' + file_name + '.jpg', frame)
+                    with open('encounters/details/'+file_name+'.json', 'w') as f:
+                        json.dump(encounter_details, f, indent=4)
                     self.processed_buffers[i].task_done()
                 except:
                     pass
@@ -271,19 +254,10 @@ class Stream():
 if __name__ == '__main__':
     url = 'http://192.168.0.102:8080/shot.jpg'
     url2 = 'http://192.168.0.101:8080/shot.jpg'
-    # threaded_camera = Camera(src)
-    # network_camera = Network_Camera(url)
-    # network_camera = Camera()
-    # model = Model('train_images')
-    cameras = {'Network': url, 'Webcam': 0}
+    cameras = {'Network': url}
     tc = Threaded_Model(cameras)
-    # camera_objects = tc.get_cameras() 
     while True:
         try:
-            # print(tc.processed_frames.qsize())
-            # print(tc.processed_buffers[0].qsize())
             pass
-            # threaded_camera.show_frame()
-            # network_camera.show_frames()
         except AttributeError:
             pass
