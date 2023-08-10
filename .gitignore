@@ -5,3 +5,5 @@ new_face_dir/
 test_images/
 train_images/
 pretrained models/
+.vscode/
+.git/
