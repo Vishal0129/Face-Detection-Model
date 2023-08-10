@@ -7,3 +7,4 @@ train_images/
 pretrained models/
 .vscode/
 .git/
+__pycache__/

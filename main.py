@@ -63,9 +63,25 @@ class Model(object):
             return True, frame, encounter_details
         else:
             return False, frame, encounter_details
-    
+
+
+class Stream():
+    def __init__(self):
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.bind((HOST, PORT))
+        self.server.listen(1)
+        print('[INFO] Stream server started at', HOST, PORT)
+        self.conn, self.addr = self.server.accept()
+        print('[INFO] Stream client connected at', self.addr)
+
+    def send(self, data):
+        self.conn.send(data)
+
+def stream_video():
+    pass
+
 class Camera(object):
-    def __init__(self, src=0, if_stream=False, camera_buffer:Queue=None):
+    def __init__(self, src=0, if_stream=False, camera_buffer:Queue=None, stream:Stream=None):
         self.src = src
         self.capture = cv2.VideoCapture(src)
         self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 2)
@@ -80,7 +96,7 @@ class Camera(object):
 
         self.if_stream = if_stream
         if if_stream:
-            self.stream = Stream()
+            self.stream = stream
         
     def update(self, camera_buffer:Queue=None):
         while True:
@@ -95,18 +111,22 @@ class Camera(object):
             # time.sleep(self.FPS)
             
     def show_frames(self):
-        if self.if_stream:
-            frame_data = cv2.imencode('.jpg', self.frame)[1].tobytes()
-            frame_length = len(frame_data)
-            self.stream.send(frame_length.to_bytes(4, byteorder='big'))
-            self.stream.send(frame_data)
-        else:
-            cv2.imshow('Camera'+str(self.src), self.frame)
-        cv2.waitKey(self.FPS_MS)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            self.capture.release()
-            cv2.destroyAllWindows()
-            exit(0)
+        while True:
+            try:
+                if self.if_stream:
+                    frame_data = cv2.imencode('.jpg', self.frame)[1].tobytes()
+                    frame_length = len(frame_data)
+                    self.stream.send(frame_length.to_bytes(4, byteorder='big'))
+                    self.stream.send(frame_data)
+                else:
+                    cv2.imshow('Camera'+str(self.src), self.frame)
+                cv2.waitKey(self.FPS_MS)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    self.capture.release()
+                    cv2.destroyAllWindows()
+                    exit(0)
+            except:
+                pass
 
     def show_frames_thread(self):
         while True:
@@ -120,7 +140,7 @@ class Camera(object):
                 pass
 
 class Network_Camera(object):
-    def __init__(self, url, if_stream=False, camera_buffer:Queue=None):
+    def __init__(self, url, if_stream=False, camera_buffer:Queue=None, stream:Stream=None):
         self.url = url
         self.camera_buffer = camera_buffer
         self.FPS = 1/FPS
@@ -132,7 +152,7 @@ class Network_Camera(object):
         self.thread.start()
         self.if_stream = if_stream
         if if_stream:
-            self.stream = Stream()
+            self.stream = stream
     
     def update(self, camera_buffer:Queue=None):
         while True:
@@ -147,17 +167,21 @@ class Network_Camera(object):
             # time.sleep(self.FPS)
 
     def show_frames(self):
-        if self.if_stream:
-            frame_data = cv2.imencode('.jpg', self.frame)[1].tobytes()
-            frame_length = len(frame_data)
-            self.stream.send(frame_length.to_bytes(4, byteorder='big'))
-            self.stream.send(frame_data)
-        else:
-            cv2.imshow('Network Camera'+self.url, self.frame)
-        cv2.waitKey(self.FPS_MS)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            cv2.destroyAllWindows()
-            exit(0)
+        while True:
+            try:
+                if self.if_stream:
+                    frame_data = cv2.imencode('.jpg', self.frame)[1].tobytes()
+                    frame_length = len(frame_data)
+                    self.stream.send(frame_length.to_bytes(4, byteorder='big'))
+                    self.stream.send(frame_data)
+                else:
+                    cv2.imshow('Network Camera'+self.url, self.frame)
+                cv2.waitKey(self.FPS_MS)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    cv2.destroyAllWindows()
+                    exit(0)
+            except:
+                pass
 
     def show_frames_thread(self):
         while True:
@@ -206,6 +230,8 @@ class DataBase():
                 "timestamp": datetime.strptime(encounter_details[encounter]["encounter_time"], DATE_FORMAT),
                 "image": file_name
             }
+            if values["confidence"] < '43%':
+                continue
             values["timestamp"] = values["timestamp"].strftime('%d-%b-%Y %H:%M:%S')
             self.cursor.execute(query, values)
         # print(values)
@@ -213,12 +239,14 @@ class DataBase():
         self.cursor.close()
 
 class Threaded_Model():
-    def __init__(self, cameras: dict):
+    def __init__(self, cameras: dict, if_streaming:list, streams:list[Stream]=None):
         print('[INFO] Loading model...')
         self.model = Model('train_images')
         self.models = [self.model for _ in range(len(cameras))]
         print('[INFO] Model loaded')
 
+        if not streams:
+            streams = [False for _ in range(len(cameras))]
         self.n = len(cameras)
         self.camera_names = list(cameras.keys())
 
@@ -231,7 +259,7 @@ class Threaded_Model():
         self.processed_frames = Queue()
 
         print('[INFO] Starting frame capturing...')
-        self.cameras = [Network_Camera(url=cameras[self.camera_names[i]], camera_buffer=self.camera_buffers[i]) if self.camera_names[i] == 'Network' else Camera(src=cameras[self.camera_names[i]], camera_buffer=self.camera_buffers[i]) for i in range(self.n)]
+        self.cameras = [Network_Camera(url=cameras[self.camera_names[i]], camera_buffer=self.camera_buffers[i], if_stream=if_streaming[i], stream=streams[i]) if self.camera_names[i] == 'Network' else Camera(src=cameras[self.camera_names[i]], camera_buffer=self.camera_buffers[i], if_stream=if_streaming[i], stream=streams[i]) for i in range(self.n)]
 
         print('[INFO] Starting frame processing...')
         self.frame_process_threads = [Thread(target=self.process_frames, args=(i,)) for i in range(self.n)]
@@ -275,23 +303,16 @@ class Threaded_Model():
                 except:
                     pass
 
-class Stream():
-    def __init__(self, n=1):
-        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server.bind((HOST, PORT))
-        self.server.listen(n)
-        self.conn, self.addr = self.server.accept()
-
-    def send(self, data):
-        self.conn.send(data)
-
 if __name__ == '__main__':
     url = 'http://192.168.0.102:8080/shot.jpg'
     url2 = 'http://192.168.0.101:8080/shot.jpg'
-    cameras = {'Network': url}
-    tc = Threaded_Model(cameras)
+    cams = {'Network': url}
+    if_streaming = [True, False]
+    streams = [Stream() if i else None for i in if_streaming]
+    tc = Threaded_Model(cams, if_streaming=if_streaming, streams=streams)
+    cameras = tc.cameras
+    stream_thread = Thread(target=cameras[0].show_frames, args=())
+    stream_thread.daemon = True
+    stream_thread.start()
     while True:
-        try:
-            pass
-        except AttributeError:
-            pass
+        pass
