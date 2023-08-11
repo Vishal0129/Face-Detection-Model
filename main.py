@@ -21,64 +21,59 @@ DATABASE_UPDATING = Lock()
 
 class Model(object):
     def __init__(self, known_faces_dir):
-        self.known_face_encodings = []
-        self.known_face_names = []
-        for person_name in listdir(known_faces_dir):
-            person_dir = path.join(known_faces_dir, person_name)
-            if path.isdir(person_dir):
-                for image_name in listdir(person_dir):
-                    image_path = path.join(person_dir, image_name)
-                    image = cv2.imread(image_path)
-                    known_face_encodings = face_encodings(image)
-                    if not known_face_encodings:
-                        print("No face detected in", image_path)
-                        continue
-                    print('[MSG] ',person_name, "added to known faces")
-                    face_encoding = known_face_encodings[0]
-                    self.known_face_encodings.append(face_encoding)
-                    self.known_face_names.append(person_name)
+        if os.path.exists('known_faces.txt'):
+            self.update()
+        else:
+            self.known_face_encodings = []
+            self.known_face_names = []
+            for person_name in listdir(known_faces_dir):
+                person_dir = path.join(known_faces_dir, person_name)
+                if path.isdir(person_dir):
+                    for image_name in listdir(person_dir):
+                        image_path = path.join(person_dir, image_name)
+                        image = cv2.imread(image_path)
+                        known_face_encodings = face_encodings(image)
+                        if not known_face_encodings:
+                            print("No face detected in", image_path)
+                            continue
+                        print('[MSG] ',person_name, "added to known faces")
+                        face_encoding = known_face_encodings[0]
+                        self.known_face_encodings.append(face_encoding)
+                        self.known_face_names.append(person_name)
+            print(len(self.known_face_encodings))
+            print(self.known_face_names)
     
-    def updater(self, known_face_dir):
-        size = 0
-        for path, dirs, files in os.walk('train_images'):
-            for f in files:
-                fp = os.path.join(path, f)
-                size += os.path.getsize(fp)
-        new_size = 0
-        while True:
+    def updater(self):
+        try:
+            size = 0
+            size = os.path.getsize('known_faces.txt')
             new_size = 0
-            try:
-                for path, dirs, files in os.walk('train_images'):
-                    for f in files:
-                        fp = os.path.join(path, f)
-                        new_size += os.path.getsize(fp)
-            except:
-                continue
-            if new_size != size:
-                print('[INFO] Updating model...')
-                with DATABASE_UPDATING:
-                    self.update(known_face_dir)
-                print('[INFO] Model updated')
-                size = new_size
-            time.sleep(1)
+            while True:
+                new_size = 0
+                try:
+                    new_size = os.path.getsize('known_faces.txt')
+                except:
+                    continue
+                if new_size != size:
+                    print('[INFO] Updating model...')
+                    with DATABASE_UPDATING:
+                        self.update()
+                    print('[INFO] Model updated')
+                    size = new_size
+        except:
+            pass
+        time.sleep(1)
 
-    def update(self, known_faces_dir):
-        self.known_face_encodings = []
-        self.known_face_names = []
-        for person_name in listdir(known_faces_dir):
-            person_dir = path.join(known_faces_dir, person_name)
-            if path.isdir(person_dir):
-                for image_name in listdir(person_dir):
-                    image_path = path.join(person_dir, image_name)
-                    image = cv2.imread(image_path)
-                    known_face_encodings = face_encodings(image)
-                    if not known_face_encodings:
-                        print("No face detected in", image_path)
-                        continue
-                    print('[MSG] ',person_name, "added to known faces")
-                    face_encoding = known_face_encodings[0]
-                    self.known_face_encodings.append(face_encoding)
-                    self.known_face_names.append(person_name)
+    def update(self):
+        with open('known_faces.txt', 'r') as f:
+            data = f.read()
+            known_faces_data = data.split('\n')
+            known_face_names = known_faces_data[-1].split(',') 
+            known_faces_encodings = [np.array(list(map(float, i.split(',')))) for i in known_faces_data[:-1]]
+            # print(known_faces_encodings)
+            # print(known_face_names)
+            self.known_face_encodings = known_faces_encodings
+            self.known_face_names = known_face_names
 
     def recognize_faces(self, frame, distance_threshold=0.5, encounter_time=None):
         confidence_levels = []
@@ -277,7 +272,7 @@ class Threaded_Model():
         self.camera_names = list(cameras.keys())
 
         print('[INFO] Initializing directory updater thread...')
-        self.dir_updater_thread = Thread(target=self.model.updater, args=('train_images',))
+        self.dir_updater_thread = Thread(target=self.model.updater, args=())
         self.dir_updater_thread.daemon = True
         self.dir_updater_thread.start()
 
@@ -336,7 +331,7 @@ class Threaded_Model():
                     pass
 
 if __name__ == '__main__':
-    url = 'http://192.168.0.102:8080/shot.jpg'
+    url = 'http://192.168.0.101:8080/shot.jpg'
     url2 = 'http://192.168.0.101:8080/shot.jpg'
     cams = {'Network': url}
     tc = Threaded_Model(cams)
