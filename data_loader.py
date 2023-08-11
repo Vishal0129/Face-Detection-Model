@@ -3,16 +3,13 @@ from face_recognition import face_encodings
 import cv2
 import time
 import os
-import pickle
+import numpy as np
 
 known_faces_dir = 'train_images'
 
 
 
 def load_known_faces():
-    if not os.path.exists('known_faces.pkl'):
-        print('[INFO] Creating known_faces.pkl')
-        open('known_faces.pkl', 'w').close()
     known_face_encodings = []
     known_face_names = []
     for person_name in listdir(known_faces_dir):
@@ -21,17 +18,25 @@ def load_known_faces():
             for image_name in listdir(person_dir):
                 image_path = path.join(person_dir, image_name)
                 image = cv2.imread(image_path)
-                known_face_encodings = face_encodings(image)
-                if not known_face_encodings:
+                known_face_encoding = face_encodings(image)
+                if not known_face_encoding:
                     print("No face detected in", image_path)
                     continue
                 print('[MSG] ',person_name, "added to known faces")
-                face_encoding = known_face_encodings[0]
+                face_encoding = known_face_encoding[0]
                 known_face_encodings.append(face_encoding)
                 known_face_names.append(person_name)
     
-    known_faces = (known_face_encodings, known_face_names)
-    pickle.dump(known_faces, open('known_faces.pkl', 'wb'))
+    # print(len(known_face_encodings))
+    known_face_encodings_text = [','.join(str(e) for e in known_face_encoding) for known_face_encoding in known_face_encodings]
+    known_face_encodings_text = '\n'.join(str(e) for e in known_face_encodings_text)
+    # print(known_face_encodings_text)
+    known_face_names_text = ','.join(str(e) for e in known_face_names)
+    known_faces_text = known_face_encodings_text + '\n' + known_face_names_text
+    print('[INFO] Writing to known_faces.txt...')
+    with open('known_faces.txt', 'w') as f:
+        f.write(known_faces_text)
+    print('[INFO] Writing to known_faces.txt done')
 
 def main():
     size = 0
@@ -50,9 +55,9 @@ def main():
         except:
             continue
         if new_size != size:
-            print('[INFO] Updating model...')
+            print('[INFO] Updating dataset...')
             load_known_faces()
-            print('[INFO] Model updated')
+            print('[INFO] Dataset updated')
             size = new_size
         time.sleep(1)
 
