@@ -341,7 +341,7 @@ if __name__ == '__main__':
     cams = dict()
     for camera in camera_details:
         cams[camera_details[camera]['name']] = {'type':camera_details[camera]['type'], 'url':camera_details[camera]['url'], 'location':camera_details[camera]['location']}
-    print(cams)
+    # print(cams)
 
     tc = Threaded_Model(cams)
     while True:
