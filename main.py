@@ -1,5 +1,5 @@
 from datetime import datetime
-from threading import Thread
+from threading import Thread, Lock
 import cv2, time
 import socket
 from requests import get
@@ -8,6 +8,8 @@ from os import listdir, path
 from face_recognition import face_encodings, compare_faces, face_locations, face_distance
 from queue import Queue
 import cx_Oracle
+import os
+import pickle
 
 HOST = '192.168.0.106'
 PORT = 8090
@@ -15,6 +17,7 @@ FPS = 60
 IMG_WIDTH = 640
 IMG_HEIGHT = 480
 DATE_FORMAT = "%Y%m%d_%H%M%S_%f"
+DATABASE_UPDATING = Lock()
 
 class Model(object):
     def __init__(self, known_faces_dir):
@@ -34,8 +37,50 @@ class Model(object):
                     face_encoding = known_face_encodings[0]
                     self.known_face_encodings.append(face_encoding)
                     self.known_face_names.append(person_name)
+    
+    def updater(self, known_face_dir):
+        size = 0
+        for path, dirs, files in os.walk('train_images'):
+            for f in files:
+                fp = os.path.join(path, f)
+                size += os.path.getsize(fp)
+        new_size = 0
+        while True:
+            new_size = 0
+            try:
+                for path, dirs, files in os.walk('train_images'):
+                    for f in files:
+                        fp = os.path.join(path, f)
+                        new_size += os.path.getsize(fp)
+            except:
+                continue
+            if new_size != size:
+                print('[INFO] Updating model...')
+                with DATABASE_UPDATING:
+                    self.update(known_face_dir)
+                print('[INFO] Model updated')
+                size = new_size
+            time.sleep(1)
 
-    def recognize_faces(self, frame, distance_threshold=0.6, encounter_time=None):
+    def update(self, known_faces_dir):
+        self.known_face_encodings = []
+        self.known_face_names = []
+        for person_name in listdir(known_faces_dir):
+            person_dir = path.join(known_faces_dir, person_name)
+            if path.isdir(person_dir):
+                for image_name in listdir(person_dir):
+                    image_path = path.join(person_dir, image_name)
+                    image = cv2.imread(image_path)
+                    known_face_encodings = face_encodings(image)
+                    if not known_face_encodings:
+                        print("No face detected in", image_path)
+                        continue
+                    print('[MSG] ',person_name, "added to known faces")
+                    face_encoding = known_face_encodings[0]
+                    self.known_face_encodings.append(face_encoding)
+                    self.known_face_names.append(person_name)
+
+    def recognize_faces(self, frame, distance_threshold=0.5, encounter_time=None):
         confidence_levels = []
         encounter_details = dict()
 
@@ -81,7 +126,7 @@ def stream_video():
     pass
 
 class Camera(object):
-    def __init__(self, src=0, if_stream=False, camera_buffer:Queue=None, stream:Stream=None):
+    def __init__(self, src=0, camera_buffer:Queue=None):
         self.src = src
         self.capture = cv2.VideoCapture(src)
         self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 2)
@@ -94,9 +139,6 @@ class Camera(object):
         print('[INFO] Frame capturing started from camera', src)
         self.thread.start()
 
-        self.if_stream = if_stream
-        if if_stream:
-            self.stream = stream
         
     def update(self, camera_buffer:Queue=None):
         while True:
@@ -113,13 +155,7 @@ class Camera(object):
     def show_frames(self):
         while True:
             try:
-                if self.if_stream:
-                    frame_data = cv2.imencode('.jpg', self.frame)[1].tobytes()
-                    frame_length = len(frame_data)
-                    self.stream.send(frame_length.to_bytes(4, byteorder='big'))
-                    self.stream.send(frame_data)
-                else:
-                    cv2.imshow('Camera'+str(self.src), self.frame)
+                cv2.imshow('Camera'+str(self.src), self.frame)
                 cv2.waitKey(self.FPS_MS)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     self.capture.release()
@@ -140,7 +176,7 @@ class Camera(object):
                 pass
 
 class Network_Camera(object):
-    def __init__(self, url, if_stream=False, camera_buffer:Queue=None, stream:Stream=None):
+    def __init__(self, url, camera_buffer:Queue=None):
         self.url = url
         self.camera_buffer = camera_buffer
         self.FPS = 1/FPS
@@ -150,32 +186,26 @@ class Network_Camera(object):
         self.thread.daemon = True
         print('[INFO] Frame capturing started from network camera', url)
         self.thread.start()
-        self.if_stream = if_stream
-        if if_stream:
-            self.stream = stream
-    
+        
     def update(self, camera_buffer:Queue=None):
         while True:
-            img = get(self.url)
-            self.frame = cv2.imdecode(np.array(bytearray(img.content), dtype=np.uint8), -1)
-            # print('[MSG] Frame captured from network camera')
-            if camera_buffer:
-                # print('[INFO] Camera buffer ',camera_buffer.qsize())
-                # print('[INFO] Putting frame in camera buffer: ',camera_buffer)
-                camera_buffer.put((datetime.now().strftime(DATE_FORMAT)[:-3], self.frame))
-                camera_buffer.task_done()
+            try:
+                img = get(self.url)
+                self.frame = cv2.imdecode(np.array(bytearray(img.content), dtype=np.uint8), -1)
+                # print('[MSG] Frame captured from network camera')
+                if camera_buffer:
+                    # print('[INFO] Camera buffer ',camera_buffer.qsize())
+                    # print('[INFO] Putting frame in camera buffer: ',camera_buffer)
+                    camera_buffer.put((datetime.now().strftime(DATE_FORMAT)[:-3], self.frame))
+                    camera_buffer.task_done()
+            except:
+                continue
             # time.sleep(self.FPS)
 
     def show_frames(self):
         while True:
             try:
-                if self.if_stream:
-                    frame_data = cv2.imencode('.jpg', self.frame)[1].tobytes()
-                    frame_length = len(frame_data)
-                    self.stream.send(frame_length.to_bytes(4, byteorder='big'))
-                    self.stream.send(frame_data)
-                else:
-                    cv2.imshow('Network Camera'+self.url, self.frame)
+                cv2.imshow('Network Camera'+self.url, self.frame)
                 cv2.waitKey(self.FPS_MS)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     cv2.destroyAllWindows()
@@ -221,34 +251,35 @@ class DataBase():
             raise Exception('Database connection failed')
         
     def insert(self, file_name, encounter_details):
-        self.cursor = self.connection.cursor()   
-        for encounter in encounter_details:
-            query = 'insert into encounters values(:name, :confidence, :timestamp, :image)'
-            values = {
-                "name": encounter,
-                "confidence": '%.2f%%'%(encounter_details[encounter]["confidence"]*100),
-                "timestamp": datetime.strptime(encounter_details[encounter]["encounter_time"], DATE_FORMAT),
-                "image": file_name
-            }
-            if values["confidence"] < '43%':
-                continue
-            values["timestamp"] = values["timestamp"].strftime('%d-%b-%Y %H:%M:%S')
-            self.cursor.execute(query, values)
-        # print(values)
-        self.connection.commit()
-        self.cursor.close()
+        with self.connection.cursor() as cursor: 
+            for encounter in encounter_details:
+                query = 'insert into encounters values(:name, :confidence, :timestamp, :image)'
+                values = {
+                    "name": encounter,
+                    "confidence": '%.2f%%'%(encounter_details[encounter]["confidence"]*100),
+                    "timestamp": datetime.strptime(encounter_details[encounter]["encounter_time"], DATE_FORMAT),
+                    "image": file_name
+                }
+                if values["confidence"] < '43%':
+                    continue
+                values["timestamp"] = values["timestamp"].strftime('%d-%b-%Y %H:%M:%S')
+                cursor.execute(query, values)
+            self.connection.commit()
 
 class Threaded_Model():
-    def __init__(self, cameras: dict, if_streaming:list, streams:list[Stream]=None):
+    def __init__(self, cameras: dict):
         print('[INFO] Loading model...')
         self.model = Model('train_images')
         self.models = [self.model for _ in range(len(cameras))]
         print('[INFO] Model loaded')
 
-        if not streams:
-            streams = [False for _ in range(len(cameras))]
         self.n = len(cameras)
         self.camera_names = list(cameras.keys())
+
+        print('[INFO] Initializing directory updater thread...')
+        self.dir_updater_thread = Thread(target=self.model.updater, args=('train_images',))
+        self.dir_updater_thread.daemon = True
+        self.dir_updater_thread.start()
 
         print('[INFO] Initializing camera buffers...')
         self.camera_buffers = [Queue() for _ in range(self.n)]
@@ -259,7 +290,7 @@ class Threaded_Model():
         self.processed_frames = Queue()
 
         print('[INFO] Starting frame capturing...')
-        self.cameras = [Network_Camera(url=cameras[self.camera_names[i]], camera_buffer=self.camera_buffers[i], if_stream=if_streaming[i], stream=streams[i]) if self.camera_names[i] == 'Network' else Camera(src=cameras[self.camera_names[i]], camera_buffer=self.camera_buffers[i], if_stream=if_streaming[i], stream=streams[i]) for i in range(self.n)]
+        self.cameras = [Network_Camera(url=cameras[self.camera_names[i]], camera_buffer=self.camera_buffers[i]) if self.camera_names[i] == 'Network' else Camera(src=cameras[self.camera_names[i]], camera_buffer=self.camera_buffers[i]) for i in range(self.n)]
 
         print('[INFO] Starting frame processing...')
         self.frame_process_threads = [Thread(target=self.process_frames, args=(i,)) for i in range(self.n)]
@@ -281,7 +312,8 @@ class Threaded_Model():
         while True:
             try:
                 encounter_time, frame = self.camera_buffers[camera_index].get(block=False)
-                found, frame, encounter_details = model.recognize_faces(frame, encounter_time=encounter_time)
+                with DATABASE_UPDATING:
+                    found, frame, encounter_details = model.recognize_faces(frame, encounter_time=encounter_time)
                 if found:
                     self.processed_buffers[camera_index].put((encounter_time, frame, encounter_details))
                 self.camera_buffers[camera_index].task_done()
@@ -297,7 +329,7 @@ class Threaded_Model():
                     # cv2.imshow('Processed Camera ' + self.camera_names[i], frame)
                     # cv2.waitKey(1)
                     file_name = self.camera_names[i] + '_' + str(encounter_time)
-                    cv2.imwrite('encounters/images/' + file_name + '.jpg', frame)
+                    cv2.imwrite('encounters/' + file_name + '.jpg', frame)
                     Thread(target=self.db.insert, args=(file_name, encounter_details)).start()
                     # self.db.insert(file_name, encounter_details)
                 except:
@@ -307,12 +339,6 @@ if __name__ == '__main__':
     url = 'http://192.168.0.102:8080/shot.jpg'
     url2 = 'http://192.168.0.101:8080/shot.jpg'
     cams = {'Network': url}
-    if_streaming = [True, False]
-    streams = [Stream() if i else None for i in if_streaming]
-    tc = Threaded_Model(cams, if_streaming=if_streaming, streams=streams)
-    cameras = tc.cameras
-    stream_thread = Thread(target=cameras[0].show_frames, args=())
-    stream_thread.daemon = True
-    stream_thread.start()
+    tc = Threaded_Model(cams)
     while True:
-        pass
+        continue
