@@ -77,7 +77,7 @@ class Model(object):
             self.known_face_encodings = known_faces_encodings
             self.known_face_names = known_face_names
 
-    def recognize_faces(self, frame, encounter_time, distance_threshold=0.5, camerasocketurl=None, location=None):
+    def recognize_faces(self, frame, encounter_time, distance_threshold=0.5, camerasocketurl=None, location=None, camera_id=None):
         confidence_levels = []
         encounter_details = dict()
 
@@ -95,7 +95,7 @@ class Model(object):
 
                 name = self.known_face_names[matched_index]
                 top, right, bottom, left = face_location
-                encounter_details[name] = {'confidence': confidence, 'encounter_time': encounter_time, 'camerasocketurl': camerasocketurl, 'location': location}
+                encounter_details[name] = {'confidence': confidence, 'encounter_time': encounter_time, 'camerasocketurl': camerasocketurl, 'location': location, 'camera_id': camera_id}
                 cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
                 cv2.rectangle(frame, (left, bottom-35), (right, bottom), (0, 255, 0), cv2.FILLED)
                 cv2.putText(frame, f"{name} ({confidence:.2f})", (left+6, bottom-6), cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255), 1)
@@ -125,6 +125,7 @@ class Camera(object):
     def __init__(self, details:dict, camera_buffer:Queue=None):
         self.url = int(details['url'])
         self.location = details['location']
+        self.camera_id = details['camera_id']
         self.capture = cv2.VideoCapture(self.url)
         self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 2)
        
@@ -176,6 +177,7 @@ class Network_Camera(object):
     def __init__(self, details:dict, camera_buffer:Queue=None):
         self.url = details['url']
         self.location = details['location']
+        self.camera_id = details['camera_id']
         self.camera_buffer = camera_buffer
         self.FPS = 1/FPS
         self.FPS_MS = int(self.FPS * 1000)
@@ -251,14 +253,15 @@ class DataBase():
     def insert(self, file_name, encounter_details):
         with self.connection.cursor() as cursor: 
             for encounter in encounter_details:
-                query = 'insert into encounters values(:name, :confidence, :timestamp, :image, :camerasocketurl, :location)'
+                query = 'insert into encounters values(:name, :confidence, :timestamp, :image, :camerasocketurl, :location, :camera_id)'
                 values = {
                     "name": encounter,
                     "confidence": '%.2f%%'%(encounter_details[encounter]["confidence"]*100),
                     "timestamp": datetime.strptime(encounter_details[encounter]["encounter_time"], DATE_FORMAT),
                     "image": file_name,
                     "camerasocketurl": encounter_details[encounter]["camerasocketurl"],
-                    "location": encounter_details[encounter]["location"]
+                    "location": encounter_details[encounter]["location"],
+                    "camera_id": encounter_details[encounter]["camera_id"]
                 }
                 if values["confidence"] < '43%':
                     continue
@@ -272,6 +275,7 @@ class Threaded_Model():
         self.model = Model('train_images')
         self.models = [self.model for _ in range(len(cameras))]
         print('[INFO] Model loaded')
+        self.camera_details = cameras
 
         self.n = len(cameras)
         self.camera_types = [cameras[i]['type'] for i in cameras]
@@ -314,7 +318,7 @@ class Threaded_Model():
             try:
                 encounter_time, frame = self.camera_buffers[camera_index].get(block=False)
                 with DATABASE_UPDATING:
-                    found, frame, encounter_details = model.recognize_faces(frame, encounter_time=encounter_time, camerasocketurl=self.cameras[camera_index].url, location=self.cameras[camera_index].location)
+                    found, frame, encounter_details = model.recognize_faces(frame, encounter_time=encounter_time, camerasocketurl=self.cameras[camera_index].url, location=self.cameras[camera_index].location, camera_id = self.cameras[camera_index].camera_id)
                 if found:
                     self.processed_buffers[camera_index].put((encounter_time, frame, encounter_details))
                 self.camera_buffers[camera_index].task_done()
@@ -341,7 +345,7 @@ if __name__ == '__main__':
     camera_details = json.load(open('config.json', 'r'))['cameras']
     cams = dict()
     for camera in camera_details:
-        cams[camera_details[camera]['name']] = {'type':camera_details[camera]['type'], 'url':camera_details[camera]['url']+'shot.jpg', 'location':camera_details[camera]['location']}
+        cams[camera_details[camera]['name']] = {'type':camera_details[camera]['type'], 'url':camera_details[camera]['url']+'shot.jpg', 'location':camera_details[camera]['location'], 'camera_id':camera}
     # print(cams)
 
     tc = Threaded_Model(cams)
