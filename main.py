@@ -19,7 +19,7 @@ IMG_WIDTH = 640
 IMG_HEIGHT = 480
 DATE_FORMAT = "%Y%m%d_%H%M%S_%f"
 DATABASE_UPDATING = Lock()
-THREADS_PER_CAMERA = 1
+THREADS_PER_CAMERA = 3
 
 class Model(object):
     def __init__(self, known_faces_dir):
