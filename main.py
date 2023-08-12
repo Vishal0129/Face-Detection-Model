@@ -5,7 +5,7 @@ import socket
 from requests import get
 import numpy as np
 from os import listdir, path
-from face_recognition import face_encodings, compare_faces, face_locations, face_distance
+from face_recognition import face_encodings, face_locations, face_distance
 from queue import Queue
 import cx_Oracle
 import os
@@ -19,6 +19,7 @@ IMG_WIDTH = 640
 IMG_HEIGHT = 480
 DATE_FORMAT = "%Y%m%d_%H%M%S_%f"
 DATABASE_UPDATING = Lock()
+THREADS_PER_CAMERA = 1
 
 class Model(object):
     def __init__(self, known_faces_dir):
@@ -293,7 +294,7 @@ class Threaded_Model():
         self.cameras = [Network_Camera(details=cameras[self.camera_names[i]] , camera_buffer=self.camera_buffers[i]) if self.camera_types[i] == 'Network' else Camera(details=cameras[self.camera_names[i]], camera_buffer=self.camera_buffers[i]) for i in range(self.n)]
 
         print('[INFO] Starting frame processing...')
-        self.frame_process_threads = [Thread(target=self.process_frames, args=(i,)) for i in range(self.n)]
+        self.frame_process_threads = [Thread(target=self.process_frames, args=(i%self.n,)) for i in range(self.n * THREADS_PER_CAMERA)]
         for thread in self.frame_process_threads:
             thread.daemon = True
             thread.start()
@@ -340,7 +341,7 @@ if __name__ == '__main__':
     camera_details = json.load(open('config.json', 'r'))['cameras']
     cams = dict()
     for camera in camera_details:
-        cams[camera_details[camera]['name']] = {'type':camera_details[camera]['type'], 'url':camera_details[camera]['url'], 'location':camera_details[camera]['location']}
+        cams[camera_details[camera]['name']] = {'type':camera_details[camera]['type'], 'url':camera_details[camera]['url']+'shot.jpg', 'location':camera_details[camera]['location']}
     # print(cams)
 
     tc = Threaded_Model(cams)
