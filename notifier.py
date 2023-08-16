@@ -17,7 +17,7 @@ class Database:
             SELECT e1.NAME, e1.CONFIDENCE, e1.TIMESTAMP, e1.IMAGE, e1.CAMERASOCKETURL, e1.LOCATION, e1.CAMERA_ID
             FROM encounters e1
             JOIN (
-                SELECT NAME, MAX(TIMESTAMP) AS max_timestamp
+                SELECT NAME, MIN(TIMESTAMP) AS max_timestamp
                 FROM encounters
                 WHERE TO_DATE(TIMESTAMP, 'DD-MON-YYYY HH24:MI:SS') >= :start_time
                 GROUP BY NAME
@@ -55,7 +55,7 @@ def send_encounters(encounters_list):
         else:
             print("Failed to send encounters")
     except Exception as e:
-        print("Error sending encounters:", e)
+        pass
 
 if __name__ == "__main__":
     db = Database(username="aimlb4",
