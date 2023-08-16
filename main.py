@@ -19,7 +19,7 @@ IMG_WIDTH = 640
 IMG_HEIGHT = 480
 DATE_FORMAT = "%Y%m%d_%H%M%S_%f"
 DATABASE_UPDATING = Lock()
-THREADS_PER_CAMERA = 3
+THREADS_PER_CAMERA = 1
 
 class Model(object):
     def __init__(self, known_faces_dir):
@@ -133,7 +133,7 @@ class Camera(object):
         self.FPS_MS = int(self.FPS * 1000)
         
         self.thread = Thread(target=self.update, args=(camera_buffer,))
-        self.thread.daemon = True
+        # self.thread.daemon = True
         print('[INFO] Frame capturing started from camera', self.url)
         self.thread.start()
 
@@ -183,7 +183,7 @@ class Network_Camera(object):
         self.FPS_MS = int(self.FPS * 1000)
 
         self.thread = Thread(target=self.update, args=(camera_buffer,))
-        self.thread.daemon = True
+        # self.thread.daemon = True
         print('[INFO] Frame capturing started from network camera', self.url)
         self.thread.start()
         
@@ -230,7 +230,7 @@ class Threaded_Cameras():
         self.cameras = [Network_Camera(cameras[i]) if i=='Network' else Camera(cameras[i]) for i in cameras]
         self.threads = [Thread(target=self.cameras[i].show_frames_thread, args=()) for i in range(self.n)]
         for thread in self.threads:
-            thread.daemon = True
+            # thread.daemon = True
             thread.start()
     
     def get_cameras(self):
@@ -263,8 +263,6 @@ class DataBase():
                     "location": encounter_details[encounter]["location"],
                     "camera_id": encounter_details[encounter]["camera_id"]
                 }
-                if values["confidence"] < '43%':
-                    continue
                 values["timestamp"] = values["timestamp"].strftime('%d-%b-%Y %H:%M:%S')
                 cursor.execute(query, values)
             self.connection.commit()
@@ -283,7 +281,7 @@ class Threaded_Model():
 
         print('[INFO] Initializing directory updater thread...')
         self.dir_updater_thread = Thread(target=self.model.updater, args=())
-        self.dir_updater_thread.daemon = True
+        # self.dir_updater_thread.daemon = True
         self.dir_updater_thread.start()
 
         print('[INFO] Initializing camera buffers...')
@@ -300,12 +298,12 @@ class Threaded_Model():
         print('[INFO] Starting frame processing...')
         self.frame_process_threads = [Thread(target=self.process_frames, args=(i%self.n,)) for i in range(self.n * THREADS_PER_CAMERA)]
         for thread in self.frame_process_threads:
-            thread.daemon = True
+            # thread.daemon = True
             thread.start()
 
         print('[INFO] Starting frame showing...')
         self.show_frames_thread = Thread(target=self.save_frames)
-        self.show_frames_thread.daemon = True
+        # self.show_frames_thread.daemon = True
         self.show_frames_thread.start()
 
         print('[INFO] Connecting to database...')
@@ -333,6 +331,8 @@ class Threaded_Model():
                     self.processed_buffers[i].task_done()
                     # cv2.imshow('Processed Camera ' + self.camera_names[i], frame)
                     # cv2.waitKey(1)
+                    if encounter_details[encounter_details]["confidence"]*100 < 50:
+                        continue
                     file_name = self.camera_names[i] + '_' + str(encounter_time)
                     cv2.imwrite('encounters/' + file_name + '.jpg', frame)
                     Thread(target=self.db.insert, args=(file_name, encounter_details)).start()

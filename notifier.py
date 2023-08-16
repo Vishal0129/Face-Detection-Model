@@ -1,7 +1,6 @@
 import cx_Oracle
 from datetime import datetime, timedelta
 import time
-import json
 import threading
 import os
 import cv2
@@ -92,3 +91,5 @@ if __name__ == "__main__":
                 print("Previous encounters:", previous_encounters)
                 send_encounters(encounter_list)
             # print("Previous encounters:", previous_encounters)
+        
+        time.sleep(1)
