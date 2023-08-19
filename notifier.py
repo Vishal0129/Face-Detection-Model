@@ -67,7 +67,7 @@ def clear_encounters():
         print("[INFO] Clearing previous encounters")
         previous_encounters.clear()
 
-def send_encounters(encounters_list:dict[str, dict[str: list[dict[str, str]]]]):
+def send_encounters(encounters_list):
     try:
         images = []
         for encounter in encounters_list.keys():
