@@ -90,7 +90,7 @@ def send_encounters(encounters_list):
             encounters_list[encounter]['image'] = images[i]
 
         # print("Encounters list:", encounters_list)
-        response = requests.post("http://192.168.0.101:3001/notify", json=encounters_list)
+        response = requests.post("http://192.168.0.107:3001/notify", json=encounters_list)
         print(response.text)
 
         # if response.status_code == 200:

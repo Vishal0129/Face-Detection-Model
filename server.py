@@ -1,3 +1,4 @@
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import base64
@@ -37,3 +38,7 @@ async def get_cameras():
         return cameras
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    
+
+if __name__ == "__main__":
+    uvicorn.run(app, host='192.168.0.106', port=8000)
