@@ -9,15 +9,22 @@ import base64
 
 class Database:
     def __init__(self, username, password, host, port, service_name):
-        dsn = cx_Oracle.makedsn(host, port, service_name=service_name)
-        self.connection = cx_Oracle.connect(username, password, dsn)
+        while True:
+            try:
+                dsn = cx_Oracle.makedsn(host, port, service_name=service_name)
+                self.connection = cx_Oracle.connect(username, password, dsn)
+                print('[INFO] Connected to the database')
+                break
+            except Exception as e:
+                print("[ERROR] Failed to connect to the database. Retrying in 5 seconds...")
+                time.sleep(5)
 
     def get_unique_encounters(self, time_period_minutes):
         query = f"""
             SELECT e1.NAME, e1.CONFIDENCE, e1.TIMESTAMP, e1.IMAGE, e1.CAMERASOCKETURL, e1.LOCATION, e1.CAMERA_ID
             FROM encounters e1
             JOIN (
-                SELECT NAME, MIN(TIMESTAMP) AS max_timestamp
+                SELECT NAME, MAX(TIMESTAMP) AS max_timestamp
                 FROM encounters
                 WHERE TO_DATE(TIMESTAMP, 'DD-MON-YYYY HH24:MI:SS') >= :start_time
                 GROUP BY NAME
@@ -27,35 +34,71 @@ class Database:
         with self.connection.cursor() as cursor:
             cursor.execute(query, start_time=start_time)
             results = cursor.fetchall()
-            
+        
+        return results
+    
+    def get_other_persons(self, image)->list: 
+        query = f"""
+            SELECT NAME FROM encounters WHERE IMAGE = :image
+        """
+        with self.connection.cursor() as cursor:
+            cursor.execute(query, image=image)
+            results = cursor.fetchall()
+        
+        return results
+    
+    def get_person_details(self, name, image):
+        query = f"""
+            SELECT NAME, CONFIDENCE, TIMESTAMP, IMAGE, CAMERASOCKETURL, LOCATION, CAMERA_ID FROM encounters WHERE NAME = :name AND IMAGE = :image
+        """
+        with self.connection.cursor() as cursor:
+            cursor.execute(query, name=name, image=image)
+            results = cursor.fetchall()
+        
         return results
 
-previous_encounters = []
+previous_encounters = dict()
 
 def clear_encounters():
     global previous_encounters
     while True:
+        # clear previous encounters every 5 minutes
         time.sleep(300)
-        previous_encounters = []
+        print("[INFO] Clearing previous encounters")
+        previous_encounters.clear()
 
-def send_encounters(encounters_list):
+def send_encounters(encounters_list:dict[str, dict[str: list[dict[str, str]]]]):
     try:
         images = []
-        for encounter in encounters_list:
-            image = cv2.imread('encounters/' + encounter["image"] + '.jpg')
+        for encounter in encounters_list.keys():
+            other_persons = db.get_other_persons(encounter)
+            # other_persons.remove(encounter_list[encounter]['criminals'][0]["name"])
+            print("Other criminals in the image:", other_persons)
+            for other_person in other_persons:
+                if other_person[0] not in previous_encounters.keys():
+                    previous_encounters[other_person[0]] = [encounter, encounters_list[encounter]['criminals'][0]["camera_id"]]
+                    encounters_list[encounter]['criminals'].append(db.get_person_details(other_person[0], encounter))
+                else:
+                    if previous_encounters[other_person[0]][1] != encounters_list[encounter]['criminals'][0]["camera_id"]:
+                        previous_encounters[other_person[0]] = [encounter, encounter_list[encounter]['criminals'][0]["camera_id"]]
+                        encounters_list[encounter]['criminals'].append(db.get_person_details(other_person[0], encounter))
+            image = cv2.imread('encounters/' + encounter + '.jpg')
             image_data = cv2.imencode('.jpg', image)[1].tobytes()
             images.append(base64.b64encode(image_data).decode('utf-8'))
 
-        for i in range(len(encounters_list)):
-            encounters_list[i]["image"] = images[i]
-        print(type(encounters_list))
-        response = requests.post("http://192.168.0.100:3001/notify", json=encounters_list)
-        if response.status_code == 200:
-            print("Encounters sent successfully")
-        else:
-            print("Failed to send encounters")
+        for i, encounter in enumerate(encounters_list):
+            encounters_list[encounter]['image'] = images[i]
+
+        # print("Encounters list:", encounters_list)
+        response = requests.post("http://192.168.0.101:3001/notify", json=encounters_list)
+        print(response.text)
+
+        # if response.status_code == 200:
+        #     print("Encounters sent successfully")
+        # else:
+        #     print("Failed to send encounters")
     except Exception as e:
-        pass
+        print('Exception occurred: ', e)
 
 if __name__ == "__main__":
     db = Database(username="aimlb4",
@@ -64,7 +107,7 @@ if __name__ == "__main__":
                   port="1521",
                   service_name="xe")
 
-    time_period_minutes = 5  # Adjust the time period as needed
+    time_period_minutes = 5 
 
     encounter_clearer_thread = threading.Thread(target=clear_encounters)
     encounter_clearer_thread.daemon = True
@@ -74,22 +117,43 @@ if __name__ == "__main__":
     column_names = ["name", "confidence", "timestamp", "image", "camerasocketurl", "location", "camera_id"]
     while True:
         new_size = len(os.listdir("encounters"))
-        if size != new_size:
+        if new_size != size:
+            size = new_size
             encounters = db.get_unique_encounters(time_period_minutes)
-            encounter_list = []
+            # print(encounters)
+            encounter_list = dict()
+            
             for encounter in encounters:
-                # Assuming you have a list of column names to work with
                 encounter_details = dict(zip(column_names, encounter))
-                # print("Encounter details:", encounter_details)
-                if encounter_details["name"] not in previous_encounters:
-                    previous_encounters.append(encounter_details["name"])
-                    # Append the encounter details to the list
-                    encounter_list.append(encounter_details)
+                if encounter_details["name"] not in previous_encounters.keys():
+                    previous_encounters[encounter_details["name"]] = [encounter_details["image"], encounter_details["camera_id"]]
+                    temp = dict()
+                    temp['criminals'] = [encounter_details]
+                    encounter_list[encounter_details['image']] = temp
+                else:
+                    if previous_encounters[encounter_details["name"]][1] != encounter_details["camera_id"]:
+                        previous_encounters[encounter_details["name"]] = [encounter_details["image"], encounter_details["camera_id"]]
+                        temp = dict()
+                        temp['criminals'] = [encounter_details]
+                        encounter_list[encounter_details['image']] = temp
+            
+            
+            
+            # for encounter in encounters:
+            #     encounter_details = dict(zip(column_names, encounter))
+            #     # print("Encounter details:", encounter_details)
+            #     if encounter_details["name"] not in previous_encounters.keys():
+            #         previous_encounters[encounter_details["name"]] = [encounter_details["image"], encounter_details["camera_id"]]
+            #         encounter_list.append(encounter_details)
+            #     else:
+            #         if previous_encounters[encounter_details["name"]][1] != encounter_details["camera_id"]:
+            #             previous_encounters[encounter_details["name"]] = [encounter_details["image"], encounter_details["camera_id"]]
+            #             encounter_list.append(encounter_details) 
 
             if len(encounter_list) > 0:
                 print("Encounters:", encounter_list)
                 print("Previous encounters:", previous_encounters)
                 send_encounters(encounter_list)
-            # print("Previous encounters:", previous_encounters)
+                # print("Previous encounters:", previous_encounters)
         
         time.sleep(1)

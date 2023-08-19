@@ -19,7 +19,7 @@ IMG_WIDTH = 640
 IMG_HEIGHT = 480
 DATE_FORMAT = "%Y%m%d_%H%M%S_%f"
 DATABASE_UPDATING = Lock()
-THREADS_PER_CAMERA = 1
+THREADS_PER_CAMERA = 3
 
 class Model(object):
     def __init__(self, known_faces_dir):
@@ -44,6 +44,7 @@ class Model(object):
                         self.known_face_names.append(person_name)
             print(len(self.known_face_encodings))
             print(self.known_face_names)
+        print('[INFO] Model loaded')
     
     def updater(self):
         try:
@@ -118,9 +119,6 @@ class Stream():
     def send(self, data):
         self.conn.send(data)
 
-def stream_video():
-    pass
-
 class Camera(object):
     def __init__(self, details:dict, camera_buffer:Queue=None):
         self.url = int(details['url'])
@@ -175,7 +173,7 @@ class Camera(object):
 
 class Network_Camera(object):
     def __init__(self, details:dict, camera_buffer:Queue=None):
-        self.url = details['url']
+        self.url = details['url']+'shot.jpg'
         self.location = details['location']
         self.camera_id = details['camera_id']
         self.camera_buffer = camera_buffer
@@ -243,12 +241,15 @@ class DataBase():
         self.host = "localhost"
         self.port = "1521"
         self.service_name = "xe"
-        try:
-            dsn = cx_Oracle.makedsn(self.host, self.port, service_name=self.service_name)
-            self.connection = cx_Oracle.connect(self.username, self.password, dsn)
-        except:
-            print('[ERROR] Database connection failed')
-            raise Exception('Database connection failed')
+        while True:
+            try:
+                dsn = cx_Oracle.makedsn(self.host, self.port, service_name=self.service_name)
+                self.connection = cx_Oracle.connect(self.username, self.password, dsn)
+                print('[INFO] Database connected')
+                break
+            except:
+                print('[ERROR] Database connection failed')
+                print('[INFO] Retrying again...')
         
     def insert(self, file_name, encounter_details):
         with self.connection.cursor() as cursor: 
@@ -272,8 +273,10 @@ class Threaded_Model():
         print('[INFO] Loading model...')
         self.model = Model('train_images')
         self.models = [self.model for _ in range(len(cameras))]
-        print('[INFO] Model loaded')
         self.camera_details = cameras
+
+        print('[INFO] Connecting to database...')
+        self.db = DataBase()
 
         self.n = len(cameras)
         self.camera_types = [cameras[i]['type'] for i in cameras]
@@ -301,14 +304,11 @@ class Threaded_Model():
             thread.daemon = True
             thread.start()
 
-        print('[INFO] Starting frame showing...')
+        print('[INFO] Starting frame saving...')
         self.show_frames_thread = Thread(target=self.save_frames)
         self.show_frames_thread.daemon = True
         self.show_frames_thread.start()
 
-        print('[INFO] Connecting to database...')
-        self.db = DataBase()
-        print('[INFO] Connected to database')
 
     def process_frames(self, camera_index:int):
         model = self.models[camera_index]
@@ -345,7 +345,7 @@ if __name__ == '__main__':
     camera_details = json.load(open('config.json', 'r'))['cameras']
     cams = dict()
     for camera in camera_details:
-        cams[camera_details[camera]['name']] = {'type':camera_details[camera]['type'], 'url':camera_details[camera]['url']+'shot.jpg', 'location':camera_details[camera]['location'], 'camera_id':camera}
+        cams[camera_details[camera]['name']] = {'type':camera_details[camera]['type'], 'url':camera_details[camera]['url'], 'location':camera_details[camera]['location'], 'camera_id':camera}
     # print(cams)
 
     tc = Threaded_Model(cams)
