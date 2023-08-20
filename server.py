@@ -7,6 +7,10 @@ import os
 import numpy as np
 import json
 
+server_details = json.load(open("config.json", "r"))['server']
+server_ip, server_port = server_details["ip"], server_details["port"]
+
+
 app = FastAPI()
 
 class Criminal(BaseModel):
@@ -41,4 +45,4 @@ async def get_cameras():
     
 
 if __name__ == "__main__":
-    uvicorn.run(app, host='192.168.0.106', port=8000)
+    uvicorn.run(app, host=server_ip, port=server_port)

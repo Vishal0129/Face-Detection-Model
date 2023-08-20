@@ -6,6 +6,9 @@ import os
 import cv2
 import requests
 import base64
+import json
+
+PREVIOUS_ENCOUNTER_CLEAR_TIME = 5 # in minutes
 
 class Database:
     def __init__(self, username, password, host, port, service_name):
@@ -57,13 +60,12 @@ class Database:
         
         return results
 
-previous_encounters = dict()
+
 
 def clear_encounters():
     global previous_encounters
     while True:
-        # clear previous encounters every 5 minutes
-        time.sleep(300)
+        time.sleep(PREVIOUS_ENCOUNTER_CLEAR_TIME * 60)
         print("[INFO] Clearing previous encounters")
         previous_encounters.clear()
 
@@ -72,7 +74,6 @@ def send_encounters(encounters_list):
         images = []
         for encounter in encounters_list.keys():
             other_persons = db.get_other_persons(encounter)
-            # other_persons.remove(encounter_list[encounter]['criminals'][0]["name"])
             print("Other criminals in the image:", other_persons)
             for other_person in other_persons:
                 if other_person[0] not in previous_encounters.keys():
@@ -89,18 +90,23 @@ def send_encounters(encounters_list):
         for i, encounter in enumerate(encounters_list):
             encounters_list[encounter]['image'] = images[i]
 
-        # print("Encounters list:", encounters_list)
-        response = requests.post("http://192.168.0.107:3001/notify", json=encounters_list)
-        print(response.text)
+        response = requests.post(server_url + "/notify", json=encounters_list)
 
-        # if response.status_code == 200:
-        #     print("Encounters sent successfully")
-        # else:
-        #     print("Failed to send encounters")
+        if response.status_code == 200:
+            print("Encounters sent successfully")
+            print(response.text)
+        else:
+            print("Failed to send encounters")
     except Exception as e:
         print('Exception occurred: ', e)
 
 if __name__ == "__main__":
+    server_details = json.load(open("config.json", "r"))['notify_server']
+    server_ip, server_port = server_details["ip"], server_details["port"]
+    server_url = f"http://{server_ip}:{server_port}"
+
+    previous_encounters = dict()
+
     db = Database(username="aimlb4",
                   password="vishalsai",
                   host="localhost",
@@ -120,7 +126,6 @@ if __name__ == "__main__":
         if new_size != size:
             size = new_size
             encounters = db.get_unique_encounters(time_period_minutes)
-            # print(encounters)
             encounter_list = dict()
             
             for encounter in encounters:
@@ -136,24 +141,10 @@ if __name__ == "__main__":
                         temp = dict()
                         temp['criminals'] = [encounter_details]
                         encounter_list[encounter_details['image']] = temp
-            
-            
-            
-            # for encounter in encounters:
-            #     encounter_details = dict(zip(column_names, encounter))
-            #     # print("Encounter details:", encounter_details)
-            #     if encounter_details["name"] not in previous_encounters.keys():
-            #         previous_encounters[encounter_details["name"]] = [encounter_details["image"], encounter_details["camera_id"]]
-            #         encounter_list.append(encounter_details)
-            #     else:
-            #         if previous_encounters[encounter_details["name"]][1] != encounter_details["camera_id"]:
-            #             previous_encounters[encounter_details["name"]] = [encounter_details["image"], encounter_details["camera_id"]]
-            #             encounter_list.append(encounter_details) 
 
             if len(encounter_list) > 0:
                 print("Encounters:", encounter_list)
                 print("Previous encounters:", previous_encounters)
                 send_encounters(encounter_list)
-                # print("Previous encounters:", previous_encounters)
         
         time.sleep(1)
