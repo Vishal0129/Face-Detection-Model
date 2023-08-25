@@ -14,12 +14,12 @@ import logging
 
 HOST = '192.168.0.106'
 PORT = 8090
-FPS = 60
+FPS = 90
 IMG_WIDTH = 640
 IMG_HEIGHT = 480
 DATE_FORMAT = "%Y%m%d_%H%M%S_%f"
 DATABASE_UPDATING = Lock()
-THREADS_PER_CAMERA = 2
+THREADS_PER_CAMERA = 1
 
 # logging.basicConfig(filename='model.log', format='%(asctime)s %(levelname)s:%(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.DEBUG, encoding='utf-8')
 logging.basicConfig(
