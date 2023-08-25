@@ -89,7 +89,7 @@ class Model(object):
             self.known_face_encodings = known_faces_encodings
             self.known_face_names = known_face_names
 
-    def recognize_faces(self, frame, encounter_time, distance_threshold=0.4, camerasocketurl=None, location=None, camera_id=None):
+    def recognize_faces(self, frame, encounter_time, distance_threshold=0.5, camerasocketurl=None, location=None, camera_id=None):
         confidence_levels = []
         encounter_details = dict()
 
