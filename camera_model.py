@@ -14,7 +14,7 @@ import logging
 
 HOST = '192.168.0.106'
 PORT = 8090
-FPS = 90
+FPS = 60
 IMG_WIDTH = 640
 IMG_HEIGHT = 480
 DATE_FORMAT = "%Y%m%d_%H%M%S_%f"
@@ -351,7 +351,8 @@ class Threaded_Model():
                     cv2.imwrite('encounters/' + file_name + '.jpg', frame)
                     print('[INFO] Encounter saved to encounters/' + file_name + '.jpg')
                     logging.info('Encounter saved to encounters/%s.jpg', file_name)
-                    Thread(target=self.db.insert, args=(file_name, encounter_details)).start()
+                    # Thread(target=self.db.insert, args=(file_name, encounter_details)).start()
+                    self.db.insert(file_name, encounter_details)
                 except:
                     pass
 
