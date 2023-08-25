@@ -11,3 +11,17 @@ known_faces.txt
 config.json
 model.log
 dlib/
+ANPR - Tutorial.ipynb
+car_model_test.py 
+car_model.py
+current_frame.jpg
+database_test.py
+Dockerfile
+hog_v1.py
+hog_v2.py
+hog_v3.py
+pavan.jpg
+plate.jpg
+processed.jpg
+requirements.txt
+.dockerignore

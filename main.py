@@ -47,7 +47,7 @@ if __name__ == "__main__":
     model_process = multiprocessing.Process(target=start_model)
     model_process.start()
 
-    print('END')
+    # print('END')
 
     while True:
         continue

@@ -42,7 +42,7 @@ async def add_criminal(criminal: Criminal):
         if not os.path.exists("train_images/" + criminal_name):
             os.makedirs("train_images/" + criminal_name)
         
-        cv2.imwrite("train_images/" + criminal_name + "/" + criminal_name + ".jpg", image)
+        cv2.imwrite("train_images/" + criminal_name + "/" + criminal_name + ".bmp", image)
 
         print('[INFO] ',criminal_name, "added to known faces list")
         logging.info("%s added to known faces list", criminal_name)

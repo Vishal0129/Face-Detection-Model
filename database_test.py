@@ -7,12 +7,13 @@ class DataBase():
         self.host = "localhost"
         self.port = "1521"
         self.service_name = "xe"
-        try:
-            dsn = cx_Oracle.makedsn(self.host, self.port, service_name=self.service_name)
-            self.connection = cx_Oracle.connect(self.username, self.password, dsn)
-        except:
-            print('[ERROR] Database connection failed')
-            raise Exception('Database connection failed')
+        while True:
+            try:
+                dsn = cx_Oracle.makedsn(self.host, self.port, service_name=self.service_name)
+                self.connection = cx_Oracle.connect(self.username, self.password, dsn)
+                break
+            except:
+                print('[ERROR] Database connection failed')
         
     def insert(self, file_name, encounter_details):
         self.cursor = self.connection.cursor()   
