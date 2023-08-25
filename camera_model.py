@@ -349,6 +349,8 @@ class Threaded_Model():
                     self.processed_buffers[i].task_done()
                     file_name = self.camera_names[i] + '_' + str(encounter_time)
                     cv2.imwrite('encounters/' + file_name + '.jpg', frame)
+                    print('[INFO] Encounter saved to encounters/' + file_name + '.jpg')
+                    logging.info('Encounter saved to encounters/%s.jpg', file_name)
                     Thread(target=self.db.insert, args=(file_name, encounter_details)).start()
                 except:
                     pass

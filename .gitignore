@@ -10,3 +10,4 @@ todo.txt
 known_faces.txt
 config.json
 model.log
+dlib/

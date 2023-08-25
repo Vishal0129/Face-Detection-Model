@@ -74,6 +74,6 @@ def main():
 
 
 if __name__ == '__main__':
-    load_known_faces()
+    # load_known_faces()
     main()
     time.sleep(3)
