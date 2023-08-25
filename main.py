@@ -43,10 +43,10 @@ if __name__ == "__main__":
     server_process.start()
     data_loader_process = multiprocessing.Process(target=start_data_loader)
     data_loader_process.start()
-    model_process = multiprocessing.Process(target=start_model)
-    model_process.start()
     notifier_process = multiprocessing.Process(target=start_notifier)
     notifier_process.start()
+    model_process = multiprocessing.Process(target=start_model)
+    model_process.start()
 
     # print('END')
 
