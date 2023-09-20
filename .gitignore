@@ -25,3 +25,7 @@ plate.jpg
 processed.jpg
 requirements.txt
 .dockerignore
+database_test.py
+nn4.small2.v1.h5
+siamese.py 
+vishal_pavan.jpg
